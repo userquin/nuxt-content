@@ -1,13 +1,13 @@
 import type { RouteLocationNormalized, RouteLocationNormalizedLoaded } from 'vue-router'
 import { withoutTrailingSlash, hasProtocol } from 'ufo'
 import { pascalCase } from 'scule'
+import { useRuntimeConfig, addRouteMiddleware, callWithNuxt, navigateTo, useRoute, defineNuxtPlugin, prefetchComponents, useRouter } from '#app'
 import type { MarkdownNode, NavItem, ParsedContent } from '../types'
 import type { ModuleOptions } from '../../module'
 import { useContentState } from '../composables/content'
 import { useContentHelpers } from '../composables/helpers'
 import { fetchContentNavigation } from '../composables/navigation'
 import { queryContent } from '../composables/query'
-import { useRuntimeConfig, addRouteMiddleware, callWithNuxt, navigateTo, useRoute, defineNuxtPlugin, prefetchComponents, useRouter } from '#app'
 import { componentNames } from '#components'
 // @ts-ignore
 import layouts from '#build/layouts'
@@ -275,10 +275,6 @@ export default defineNuxtPlugin((nuxt) => {
       }
     }
   })
-
-  if (process.server) {
-    delete nuxt.payload.prerenderedAt
-  }
 
   // @ts-ignore - Refresh on client-side
   nuxt.hook('app:data:refresh', async () => process.client && await refresh(useRoute(), true))

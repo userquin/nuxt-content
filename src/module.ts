@@ -2,13 +2,13 @@ import fs from 'fs'
 import {
   addPlugin,
   defineNuxtModule,
-  resolveModule,
   createResolver,
   addImports,
   addComponentsDir,
   addTemplate,
   extendViteConfig,
-  installModule
+  installModule,
+  addVitePlugin
 } from '@nuxt/kit'
 import { genDynamicImport, genImport, genSafeVariableName } from 'knitwork'
 import type { ListenOptions } from 'listhen'
@@ -136,11 +136,11 @@ export interface ModuleOptions {
      * @default {}
      */
     anchorLinks?: boolean | {
-     /**
-       * Sets the maximal depth for anchor link generation
-       *
-       * @default 4
-       */
+      /**
+        * Sets the maximal depth for anchor link generation
+        *
+        * @default 4
+        */
       depth?: number,
       /**
        * Excludes headings from link generation when they are in the depth range.
@@ -306,8 +306,8 @@ export default defineNuxtModule<ModuleOptions>({
     }
   },
   async setup (options, nuxt) {
-    const { resolve } = createResolver(import.meta.url)
-    const resolveRuntimeModule = (path: string) => resolveModule(path, { paths: resolve('./runtime') })
+    const { resolve, resolvePath } = createResolver(import.meta.url)
+    const resolveRuntimeModule = (path: string) => resolve('./runtime', path)
     // Ensure default locale alway is the first item of locales
     options.locales = Array.from(new Set([options.defaultLocale, ...options.locales].filter(Boolean))) as string[]
 
@@ -339,6 +339,7 @@ export default defineNuxtModule<ModuleOptions>({
             code = code.replace(/<\/ContentSlot>/g, '</MDCSlot>')
             code = code.replace(/<ContentSlot/g, '<MDCSlot')
             code = code.replace(/(['"])ContentSlot['"]/g, '$1MDCSlot$1')
+            code = code.replace(/ContentSlot\(([^(]*)(:use=['"](\$slots.)?([a-zA-Z0-9_-]*)['"]|use=['"]([a-zA-Z0-9_-]*)['"])([^)]*)/g, 'MDCSlot($1name="$4"$6')
             return {
               code,
               map: { mappings: '' }
@@ -416,7 +417,7 @@ export default defineNuxtModule<ModuleOptions>({
       })
 
       nitroConfig.alias = nitroConfig.alias || {}
-      nitroConfig.alias['#content/server'] = resolveRuntimeModule('./server')
+      nitroConfig.alias['#content/server'] = resolveRuntimeModule(options.experimental.advanceQuery ? './server' : './legacy/server')
 
       const transformers = contentContext.transformers.map((t) => {
         const name = genSafeVariableName(relative(nuxt.options.rootDir, t)).replace(/_(45|46|47)/g, '_') + '_' + hash(t)
@@ -520,7 +521,7 @@ export default defineNuxtModule<ModuleOptions>({
 
     // Register navigation
     if (options.navigation) {
-      addImports({ name: 'fetchContentNavigation', as: 'fetchContentNavigation', from: resolveRuntimeModule('./composables/navigation') })
+      addImports({ name: 'fetchContentNavigation', as: 'fetchContentNavigation', from: resolveRuntimeModule(`./${options.experimental.advanceQuery ? '' : 'legacy/'}composables/navigation`) })
 
       nuxt.hook('nitro:config', (nitroConfig) => {
         nitroConfig.handlers = nitroConfig.handlers || []
@@ -699,7 +700,7 @@ export default defineNuxtModule<ModuleOptions>({
 
     // @nuxtjs/tailwindcss support
     // @ts-ignore - Module might not exist
-    nuxt.hook('tailwindcss:config', (tailwindConfig) => {
+    nuxt.hook('tailwindcss:config', async (tailwindConfig) => {
       const contentPath = resolve(nuxt.options.buildDir, 'content-cache', 'parsed/**/*.{md,yml,yaml,json}')
       tailwindConfig.content = tailwindConfig.content ?? []
 
@@ -709,6 +710,48 @@ export default defineNuxtModule<ModuleOptions>({
         tailwindConfig.content.files = tailwindConfig.content.files ?? []
         tailwindConfig.content.files.push(contentPath)
       }
+
+      // @ts-ignore
+      let cssPath = nuxt.options.tailwindcss?.cssPath ? await resolvePath(nuxt.options.tailwindcss?.cssPath, { extensions: ['.css', '.sass', '.scss', '.less', '.styl'] }) : join(nuxt.options.dir.assets, 'css/tailwind.css')
+      if (!fs.existsSync(cssPath)) {
+        cssPath = await resolvePath('tailwindcss/tailwind.css')
+      }
+
+      const contentSources = Object.values(useContentMounts(nuxt, contentContext.sources))
+        .map(mount => mount.driver === 'fs' ? mount.base : undefined)
+        .filter(Boolean)
+
+      addVitePlugin({
+        enforce: 'post',
+        name: 'nuxt:content:tailwindcss',
+        handleHotUpdate (ctx) {
+          if (!contentSources.some(cs => ctx.file.startsWith(cs))) {
+            return
+          }
+
+          const extraModules = ctx.server.moduleGraph.getModulesByFile(cssPath) || /* @__PURE__ */ new Set()
+          const timestamp = +Date.now()
+          for (const mod of extraModules) {
+            ctx.server.moduleGraph.invalidateModule(mod, undefined, timestamp)
+          }
+
+          // Wait 100ms to make sure HMR is ready (content needs to be parsed first)
+          // Without this, HMR will not work and user needs to save the file twice
+          setTimeout(() => {
+            ctx.server.ws.send({
+              type: 'update',
+              updates: Array.from(extraModules).map((mod) => {
+                return {
+                  type: mod.type === 'js' ? 'js-update' : 'css-update',
+                  path: mod.url,
+                  acceptedPath: mod.url,
+                  timestamp
+                }
+              })
+            })
+          }, 100)
+        }
+      })
     })
 
     // ignore files
