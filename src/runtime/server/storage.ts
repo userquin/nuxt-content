@@ -10,7 +10,7 @@ import { transformContent } from '../transformers'
 import { makeIgnored } from '../utils/config'
 import type { ModuleOptions } from '../../module'
 import { createPipelineFetcher } from '../query/match/pipeline'
-import { ContentQueryBuilder, ContentQueryBuilderParams } from '../types/query'
+import type { ContentQueryBuilder, ContentQueryBuilderParams } from '../types/query'
 import { getPreview, isPreview } from './preview'
 import { getIndexedContentsList } from './content-index'
 // @ts-ignore
@@ -160,24 +160,26 @@ export const getContent = async (event: H3Event, id: string): Promise<ParsedCont
     return cached.parsed as ParsedContent
   }
 
-  // eslint-disable-next-line no-async-promise-executor
-  const promise = pendingPromises[hash] || new Promise(async (resolve) => {
-    const body = await sourceStorage.getItem(id)
+  if (!pendingPromises[id + hash]) {
+    // eslint-disable-next-line no-async-promise-executor
+    pendingPromises[id + hash] = new Promise(async (resolve) => {
+      const body = await sourceStorage.getItem(id)
 
-    if (body === null) {
-      return resolve({ _id: contentId, body: null } as unknown as ParsedContent)
-    }
+      if (body === null) {
+        return resolve({ _id: contentId, body: null } as unknown as ParsedContent)
+      }
 
-    const parsed = await parseContent(contentId, body) as ParsedContent
+      const parsed = await parseContent(contentId, body) as ParsedContent
 
-    await cacheParsedStorage.setItem(id, { parsed, hash }).catch(() => {})
+      await cacheParsedStorage.setItem(id, { parsed, hash }).catch(() => {})
 
-    resolve(parsed)
+      resolve(parsed)
 
-    delete pendingPromises[hash]
-  })
+      delete pendingPromises[id + hash]
+    })
+  }
 
-  return promise
+  return pendingPromises[id + hash]
 }
 
 /**

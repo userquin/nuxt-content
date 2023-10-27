@@ -35,8 +35,8 @@ const { data: files } = useLazyFetch('/api/search.json', {
 const { data: nav } = await useAsyncData('navigation', () => fetchContentNavigation())
 
 const navigation = computed(() => {
-  const main = nav.value.filter(item => item._path !== '/v1')
-  const v1 = nav.value.find(item => item._path === '/v1')?.children
+  const main = nav.value?.filter(item => item._path !== '/v1')
+  const v1 = nav.value?.find(item => item._path === '/v1')?.children
 
   return route.path.startsWith('/v1/') ? v1 : main
 })
@@ -48,7 +48,7 @@ provide('navigation', navigation)
 <template>
   <UHeader :links="links">
     <template #logo>
-      <Logo class="h-5 w-auto" />
+      <Logo class="h-6 w-auto" />
     </template>
 
     <template #right>
@@ -81,7 +81,7 @@ provide('navigation', navigation)
     <!-- Mobile panel -->
     <template v-if="$route.path !== '/'" #panel>
       <LazyUDocsSearchButton size="md" class="mb-4 w-full" />
-      <LazyUNavigationTree :links="mapContentNavigation(navigation)" default-open :multiple="false" />
+      <LazyUNavigationTree :links="mapContentNavigation(navigation!)" default-open :multiple="false" />
     </template>
   </UHeader>
 
@@ -129,11 +129,3 @@ provide('navigation', navigation)
     <LazyUDocsSearch :files="files" :navigation="navigation" :links="links" />
   </ClientOnly>
 </template>
-
-<style>
-html.dark .shiki,
-html.dark .shiki span {
-  color: var(--s-dark) !important;
-  background-color: var(--s-dark-bg) !important;
-}
-</style>

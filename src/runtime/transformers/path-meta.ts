@@ -1,17 +1,21 @@
 import { pascalCase } from 'scule'
 import slugify from 'slugify'
 import { withoutTrailingSlash, withLeadingSlash } from 'ufo'
-import { ParsedContent } from '../types'
+import type { ParsedContent } from '../types'
 import { defineTransformer } from './utils'
 
 const SEMVER_REGEX = /^(\d+)(\.\d+)*(\.x)?$/
 
-const describeId = (_id: string) => {
-  const [_source, ...parts] = _id.split(':')
+export const describeId = (id: string) => {
+  const [_source, ...parts] = id.split(':')
 
-  const [, filename, _extension] = parts[parts.length - 1].match(/(.*)\.([^.]+)$/)!
-  parts[parts.length - 1] = filename
-  const _path = parts.join('/')
+  const [, filename, _extension] = parts[parts.length - 1]?.match(/(.*)\.([^.]+)$/) || []
+
+  if (filename) {
+    parts[parts.length - 1] = filename
+  }
+
+  const _path = (parts || []).join('/')
 
   return {
     _source,
